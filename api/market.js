@@ -5,7 +5,7 @@ const iso = (d) => d.toISOString().slice(0, 10);
 export default async function handler(req, res) {
   const { type, symbols = '', symbol = '' } = req.query;
   if (!process.env.ALPACA_KEY) return res.status(500).json({ error: '未配置 ALPACA_KEY / ALPACA_SECRET 环境变量' });
-  const clean = (s) => s.replace(/[^A-Z0-9,]/gi, '').toUpperCase();
+  const clean = (s) => s.replace(/[^A-Z0-9,\/]/gi, '').toUpperCase();
   let url;
   if (type === 'snap') url = `${D}/v2/stocks/snapshots?symbols=${clean(symbols)}&feed=${process.env.ALPACA_FEED || 'iex'}`;
   else if (type === 'bars') {
@@ -15,6 +15,8 @@ export default async function handler(req, res) {
     const a = iso(new Date(Date.now() + 21 * 864e5)), b = iso(new Date(Date.now() + 50 * 864e5));
     url = `${D}/v1beta1/options/snapshots/${clean(symbol)}?feed=${process.env.ALPACA_OPT_FEED || 'indicative'}&limit=1000&expiration_date_gte=${a}&expiration_date_lte=${b}`;
   } else if (type === 'optmarks') url = `${D}/v1beta1/options/snapshots?symbols=${clean(symbols)}&feed=${process.env.ALPACA_OPT_FEED || 'indicative'}`;
+      else if (type === 'csnap') url = `${D}/v1beta3/crypto/us/snapshots?symbols=${encodeURIComponent(clean(symbols))}`;
+  else if (type === 'cbars') url = `${D}/v1beta3/crypto/us/bars?symbols=${encodeURIComponent(clean(symbols))}&timeframe=1Day&start=${iso(new Date(Date.now() - 300 * 864e5))}&limit=10000`;
   else return res.status(400).json({ error: 'bad type' });
   try {
     const r = await fetch(url, { headers: H() });
