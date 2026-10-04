@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quant Desk · 模拟自动交易台</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e1620;--p:#15212d;--l:#243445;--t:#dbe4ec;--m:#7f93a6;--g:#3ddc97;--r:#ff6b6b;--a:#f2b84b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+.n{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.w{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:18px;margin:0}h2{font-size:14px;margin:0 0 10px;color:var(--m);font-weight:600}
+.top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.pill{padding:2px 10px;border-radius:99px;border:1px solid var(--l);color:var(--m);font-size:12px}.pill.on{color:var(--g);border-color:var(--g)}
+.eq{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.box{background:var(--p);border:1px solid var(--l);border-radius:6px;padding:14px;min-width:0}
+.big{font-size:34px;font-weight:500}.g{color:var(--g)}.r{color:var(--r)}.m{color:var(--m)}
+.cols{display:grid;grid-template-columns:320px 1fr;gap:12px}
+label{display:block;font-size:12px;color:var(--m);margin:10px 0 3px}
+input[type=number],input[type=text]{width:100%;background:var(--bg);border:1px solid var(--l);color:var(--t);padding:7px 9px;border-radius:4px;font:inherit}
+input:focus,button:focus-visible{outline:2px solid var(--a);outline-offset:1px}
+button{background:var(--a);color:#1a1405;border:0;padding:8px 12px;border-radius:4px;font:600 13px inherit;cursor:pointer;margin-top:10px}
+button.s{background:transparent;color:var(--t);border:1px solid var(--l)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+table{width:100%;border-collapse:collapse;font-size:13px}th{color:var(--m);font-weight:400;text-align:right;padding:4px 6px;border-bottom:1px solid var(--l)}
+td{text-align:right;padding:6px;border-bottom:1px solid #1b2a38}th:first-child,td:first-child{text-align:left}
+.sc{overflow-x:auto;margin-bottom:12px}.sc table{min-width:560px}
+#msg{color:var(--a);font-size:13px;margin:8px 0;min-height:20px}
+.rules{font-size:12.5px;color:var(--m);line-height:1.7}.rules b{color:var(--t);font-weight:600}
+@media(max-width:860px){.eq,.cols{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.big{font-size:28px}}
+</style></head><body><div class="w">
+<div class="top"><h1>Quant Desk <span class="m">模拟资金 · 真实行情</span></h1>
+<div class="row" style="flex:none"><span id="mk" class="pill">--</span><span id="st" class="pill">--</span></div></div>
+<div id="msg"></div>
+<div class="eq">
+ <div class="box"><h2>账户净值</h2><div class="big n" id="eq">--</div><svg id="spark" width="100%" height="46"></svg></div>
+ <div class="box"><h2>总盈亏</h2><div class="big n" id="pl" style="font-size:24px">--</div><div class="n m" id="plp"></div></div>
+ <div class="box"><h2>可用现金</h2><div class="n" id="cash" style="font-size:24px">--</div></div>
+ <div class="box"><h2>今日盈亏</h2><div class="n" id="day" style="font-size:24px">--</div><div class="m" id="halt"></div></div>
+</div>
+<div class="cols"><div>
+ <div class="box"><h2>资金与风控设置</h2>
+  <label>模拟本金（USD）</label><div class="row"><input type="number" id="cap" min="1000" step="1000"><button class="s" id="reset" style="flex:none;margin:0">重置账户</button></div>
+  <label>单笔风险（占净值 %）</label><input type="number" id="risk" step="0.25" min="0.1" max="5">
+  <label>单只股票最大仓位（%）</label><input type="number" id="maxPct" min="1" max="100">
+  <label>最多同时持仓数</label><input type="number" id="maxPos" min="1" max="20">
+  <label>单日最大亏损熔断（%）</label><input type="number" id="dailyLoss" step="0.5" min="0.5">
+  <label>关注列表（逗号分隔）</label><input type="text" id="watch">
+  <label><input type="checkbox" id="opt"> 允许交易期权（买入认购/认沽）</label>
+  <label><input type="checkbox" id="auto"> 启用自动交易</label>
+ </div>
+ <div class="box" style="margin-top:12px"><h2>交易制度</h2><div class="rules">
+  <b>趋势多头</b>：价格 &gt; SMA50，SMA20 &gt; SMA50，RSI14 在 45–70 → 买入股票；有期权权限时改买约 0.5 Delta、21–50 天到期的认购。<br>
+  <b>趋势空头</b>：对称条件（RSI 30–55）→ 买入认沽。<br>
+  <b>仓位</b>：股数 = 净值×单笔风险% ÷ (2×ATR14)，且不超过单只上限。期权单笔最多 10% 净值，按权利金 50% 止损计算张数。<br>
+  <b>退出</b>：股票 2×ATR 追踪止损、4×ATR 止盈、跌破 SMA20 离场；期权权利金 −50% 止损、+100% 止盈、到期前 5 天平仓。<br>
+  <b>纪律</b>：仅美东 9:35–15:55 开仓；行情陈旧不开仓；点差 &gt;15% 的期权不做；当日回撤触及熔断线停止开新仓。<br>
+  <b>成本</b>：股票按 0.02% 滑点，期权按买价/卖价成交，每张 $0.65。
+ </div></div></div>
+<div>
+ <div class="box sc"><h2>关注列表与信号</h2><table id="wt"></table></div>
+ <div class="box sc"><h2>当前持仓</h2><table id="pt"></table></div>
+ <div class="box sc"><h2>成交记录</h2><table id="lt"></table></div>
+</div></div></div>
+<script>
+const $=id=>document.getElementById(id),K='quantdesk.v1',f=(x,d=2)=>Number(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const def=()=>({cash:1e5,start:1e5,pos:[],log:[],eqh:[],day:null,cfg:{risk:1,maxPct:20,maxPos:5,dailyLoss:3,opt:true,auto:true,watch:'AAPL,MSFT,NVDA,TSLA,AMZN,META,SPY,QQQ'}});
+let S;try{S=JSON.parse(localStorage[K])}catch{} S=S||def();
+const save=()=>localStorage[K]=JSON.stringify(S);
+let snaps={},sig={},barsAt=0,omarks={},busy=false;
+const say=t=>$('msg').textContent=t;
+const api=async(q)=>{const r=await fetch('/api/market?'+new URLSearchParams(q));const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||r.status);return j};
+const et=()=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'numeric',minute:'numeric',hour12:false,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(x=>[x.type,x.value]));return{wd:p.weekday,min:(+p.hour%24)*60+ +p.minute,date:`${p.year}-${p.month}-${p.day}`}};
+const mkt=()=>{const e=et();const wk=!['Sat','Sun'].includes(e.wd);return{open:wk&&e.min>=570&&e.min<960,entry:wk&&e.min>=575&&e.min<=955,date:e.date}};
+// 指标
+const sma=(a,n)=>a.slice(-n).reduce((s,x)=>s+x,0)/n;
+const rsi=(c,n=14)=>{let g=0,l=0;for(let i=1;i<=n;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=n;l/=n;for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n}return l===0?100:100-100/(1+g/l)};
+const atr=(b,n=14)=>{let a=0;for(let i=1;i<b.length;i++){const tr=Math.max(b[i].h-b[i].l,Math.abs(b[i].h-b[i-1].c),Math.abs(b[i].l-b[i-1].c));a=i<=n?a+tr/(i===n?n:1):(a*(n-1)+tr)/n}return a};
+const syms=()=>S.cfg.watch.toUpperCase().split(/[\s,]+/).filter(Boolean);
+const px=s=>snaps[s]?.latestTrade?.p;
+const val=p=>p.kind==='stk'?p.qty*p.last:p.qty*100*p.last;
+const equity=()=>S.cash+S.pos.reduce((a,p)=>a+val(p),0);
+const trade=(a,p,q,pr,why,pl)=>S.log.unshift({t:new Date().toLocaleString('zh-CN',{hour12:false}),a,s:p.occ||p.sym,q,pr,why,pl});
+function analyze(sym,b){const c=b.map(x=>x.c),p=px(sym)||c.at(-1);if(c.length<60)return null;
+ const s20=sma(c,20),s50=sma(c,50),r=rsi(c),a=atr(b);let d='观望';
+ if(p>s50&&s20>s50&&r>=45&&r<=70)d='多头';else if(p<s50&&s20<s50&&r>=30&&r<=55)d='空头';
+ return{p,s20,s50,r,a,d}}
+async function refreshBars(){const all=syms();if(!all.length||Date.now()-barsAt<3e5)return;
+ const j=await api({type:'bars',symbols:all.join(',')});barsAt=Date.now();
+ for(const s of all){const b=(j.bars?.[s]||[]).map(x=>({h:x.h,l:x.l,c:x.c}));const r=b.length&&analyze(s,b);if(r)sig[s]=r}}
+const parseOcc=o=>{const m=o.match(/^([A-Z.]+)(\d{6})([CP])(\d{8})$/);return m&&{root:m[1],exp:'20'+m[2].slice(0,2)+'-'+m[2].slice(2,4)+'-'+m[2].slice(4),right:m[3],strike:+m[4]/1e3}};
+async function pickOption(sym,dir,p){const j=await api({type:'chain',symbol:sym});const want=dir==='多头'?'C':'P';let best=null;
+ for(const [occ,v] of Object.entries(j.snapshots||{})){const o=parseOcc(occ);if(!o||o.right!==want)continue;const q=v.latestQuote||{};if(!(q.bp>0&&q.ap>0))continue;const mid=(q.ap+q.bp)/2;if((q.ap-q.bp)/mid>.15)continue;
+  const dl=v.greeks?.delta;const score=dl!=null?Math.abs(Math.abs(dl)-.5):Math.abs(o.strike-p)/p;if(!best||score<best.score)best={score,occ,...o,ap:q.ap,bp:q.bp}}
+ return best}
+async function manage(){const m=mkt(),syl=S.pos.filter(p=>p.kind==='opt').map(p=>p.occ);
+ if(syl.length){const j=await api({type:'optmarks',symbols:syl.join(',')});for(const p of S.pos)if(p.occ){const q=j.snapshots?.[p.occ]?.latestQuote;if(q?.bp>0)p.last=(q.ap+q.bp)/2,p.bid=q.bp}}
+ for(const p of [...S.pos]){if(p.kind==='stk'){const x=px(p.sym);if(x)p.last=x;if(!m.open)continue;const a=sig[p.sym]?.a;if(a)p.stop=Math.max(p.stop,p.last-2*a);
+   const why=p.last<=p.stop?'止损/追踪':p.last>=p.target?'止盈':(sig[p.sym]&&p.last<sig[p.sym].s20?'跌破SMA20':null);
+   if(why){const fill=p.last*(1-.0002);S.cash+=fill*p.qty;trade('卖出',p,p.qty,fill,why,(fill-p.entry)*p.qty);S.pos=S.pos.filter(z=>z!==p)}}
+  else if(m.open){const dte=(new Date(p.exp)-Date.now())/864e5;const why=p.last<=p.entry*.5?'止损 -50%':p.last>=p.entry*2?'止盈 +100%':dte<=5?'临近到期':null;
+   if(why){const fill=p.bid||p.last;S.cash+=fill*100*p.qty-.65*p.qty;trade('卖出',p,p.qty,fill,why,(fill-p.entry)*100*p.qty-1.3*p.qty);S.pos=S.pos.filter(z=>z!==p)}}}}
+async function enter(){const m=mkt(),eq=equity(),c=S.cfg;if(!c.auto||!m.entry||S.halted)return;
+ for(const s of syms()){if(S.pos.length>=c.maxPos)break;const g=sig[s],snap=snaps[s];if(!g||g.d==='观望'||S.pos.some(p=>p.sym===s))continue;
+  if(!snap?.latestTrade||Date.now()-new Date(snap.latestTrade.t)>12e4)continue;const p=px(s);
+  if(g.d==='多头'&&!c.opt||c.opt&&g.d!=='观望'&&false){}
+  if(c.opt){const o=await pickOption(s,g.d,p);if(!o)continue;const cost=o.ap*100;
+   let n=Math.floor(Math.min(eq*c.risk/100/(cost*.5),eq*.1/cost,(S.cash-1)/(cost+.65)));if(n<1)continue;
+   S.cash-=cost*n+.65*n;const pos={kind:'opt',sym:s,occ:o.occ,right:o.right,strike:o.strike,exp:o.exp,qty:n,entry:o.ap,last:(o.ap+o.bp)/2,bid:o.bp};S.pos.push(pos);trade('买入',pos,n,o.ap,g.d==='多头'?'趋势多头·认购':'趋势空头·认沽')}
+  else if(g.d==='多头'){const fill=p*1.0002,rps=2*g.a;const n=Math.floor(Math.min(eq*c.risk/100/rps,eq*c.maxPct/100/fill,S.cash/fill));if(n<1)continue;
+   S.cash-=fill*n;const pos={kind:'stk',sym:s,qty:n,entry:fill,last:p,stop:p-rps,target:p+4*g.a};S.pos.push(pos);trade('买入',pos,n,fill,'趋势多头')}}}
+async function tick(){if(busy)return;busy=true;try{
+ const need=[...new Set([...syms(),...S.pos.filter(p=>p.kind==='stk').map(p=>p.sym)])];
+ const j=await api({type:'snap',symbols:need.join(',')});snaps=j.snapshots||j;
+ await refreshBars();const m=mkt();
+ if(!S.day||S.day.date!==m.date){S.day={date:m.date,eq:equity()};S.halted=false}
+ await manage();
+ if(equity()<S.day.eq*(1-S.cfg.dailyLoss/100))S.halted=true;
+ await enter();
+ const e=equity();if(!S.eqh.length||Date.now()-S.eqh.at(-1)[0]>6e4){S.eqh.push([Date.now(),e]);S.eqh=S.eqh.slice(-600)}
+ save();say('')}catch(e){say('行情错误：'+e.message)}busy=false;render()}
+function render(){const e=equity(),pl=e-S.start,m=mkt();
+ $('eq').textContent='$'+f(e);$('cash').textContent='$'+f(S.cash);
+ const cl=x=>x>=0?'g':'r';$('pl').className='big n '+cl(pl);$('pl').style.fontSize='24px';$('pl').textContent=(pl>=0?'+':'')+f(pl);$('plp').textContent=f(pl/S.start*100)+'%';
+ const dp=S.day?e-S.day.eq:0;$('day').className='n '+cl(dp);$('day').textContent=(dp>=0?'+':'')+f(dp);$('halt').textContent=S.halted?'已触发熔断，今日不再开仓':'';
+ $('mk').textContent=m.open?'美股交易中':'休市';$('mk').className='pill'+(m.open?' on':'');
+ $('st').textContent=S.cfg.auto?'自动交易：开':'自动交易：关';$('st').className='pill'+(S.cfg.auto?' on':'');
+ const h=S.eqh;if(h.length>1){const lo=Math.min(...h.map(x=>x[1])),hi=Math.max(...h.map(x=>x[1]))||1,W=300;$('spark').setAttribute('viewBox',`0 0 ${W} 46`);$('spark').setAttribute('preserveAspectRatio','none');
+  $('spark').innerHTML=`<polyline fill="none" stroke="${pl>=0?'#3ddc97':'#ff6b6b'}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${h.map((x,i)=>`${i/(h.length-1)*W},${42-(x[1]-lo)/((hi-lo)||1)*38}`).join(' ')}"/>`}
+ $('wt').innerHTML='<tr><th>代码<th>现价<th>SMA20<th>SMA50<th>RSI<th>ATR<th>信号</tr>'+syms().map(s=>{const g=sig[s];return g?`<tr class="n"><td>${s}<td>${f(px(s)||g.p)}<td>${f(g.s20)}<td>${f(g.s50)}<td>${f(g.r,1)}<td>${f(g.a)}<td class="${g.d==='多头'?'g':g.d==='空头'?'r':'m'}">${g.d}</tr>`:`<tr><td>${s}<td colspan=6 class="m">加载中…</tr>`}).join('');
+ $('pt').innerHTML='<tr><th>标的<th>数量<th>成本<th>现价<th>浮动盈亏<th>止损</tr>'+(S.pos.map(p=>{const k=p.kind==='stk'?1:100,u=(p.last-p.entry)*k*p.qty;return`<tr class="n"><td>${p.kind==='stk'?p.sym:p.sym+' '+p.exp.slice(5)+' '+p.strike+p.right}<td>${p.qty}<td>${f(p.entry)}<td>${f(p.last)}<td class="${cl(u)}">${f(u)}<td>${f(p.kind==='stk'?p.stop:p.entry*.5)}</tr>`}).join('')||'<tr><td colspan=6 class="m">暂无持仓。条件满足时系统会自动开仓。</tr>');
+ $('lt').innerHTML='<tr><th>时间<th>操作<th>合约<th>数量<th>价格<th>原因<th>盈亏</tr>'+(S.log.slice(0,50).map(l=>`<tr class="n"><td>${l.t}<td>${l.a}<td>${l.s}<td>${l.q}<td>${f(l.pr)}<td>${l.why}<td class="${l.pl==null?'':cl(l.pl)}">${l.pl==null?'':f(l.pl)}</tr>`).join('')||'<tr><td colspan=7 class="m">还没有成交。</tr>')}
+// 设置
+$('cap').value=S.start;for(const k of ['risk','maxPct','maxPos','dailyLoss','watch'])$(k).value=S.cfg[k];$('opt').checked=S.cfg.opt;$('auto').checked=S.cfg.auto;
+for(const k of ['risk','maxPct','maxPos','dailyLoss'])$(k).onchange=()=>{S.cfg[k]=+$(k).value;save()};
+$('watch').onchange=()=>{S.cfg.watch=$('watch').value;barsAt=0;save();tick()};
+$('opt').onchange=()=>{S.cfg.opt=$('opt').checked;save()};$('auto').onchange=()=>{S.cfg.auto=$('auto').checked;save();render()};
+$('reset').onclick=()=>{const v=+$('cap').value;if(!(v>=1000))return say('本金至少 $1,000');if(!confirm('重置将清空持仓和记录，并以 $'+f(v,0)+' 重新开始。'))return;
+ const cfg=S.cfg;S=def();S.cfg=cfg;S.cash=S.start=v;save();render();tick()};
+render();tick();setInterval(tick,15000);
+</script></body></html>
